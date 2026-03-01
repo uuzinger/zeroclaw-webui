@@ -1,7 +1,7 @@
 # PLAN.md — zeroclaw-webui
 
 ## Goal
-A lightweight, self-hosted web UI for secure file exchange between ZeroClaw and zinger.
+A lightweight, self-hosted web UI for secure file exchange and real-time chat between ZeroClaw and zinger.
 
 ## Status: Active
 Last updated: 2026-03-01
@@ -31,6 +31,17 @@ Last updated: 2026-03-01
 - [ ] Drag-and-drop upload UX improvement
 - [ ] Show upload progress bar
 - [ ] File rename support
+
+## 💬 Chat Feature Scope
+Real-time chat between zinger and ZeroClaw, integrated into the existing web UI.
+
+- [ ] WebSocket server (ws or socket.io) — real-time bidirectional messaging
+- [ ] Chat UI panel alongside file manager (split layout or tabbed)
+- [ ] Message history — persist to a local JSON or SQLite file
+- [ ] Timestamps and sender labels (zinger vs ZeroClaw)
+- [ ] ZeroClaw-side API — endpoint or WebSocket hook so the agent can send/receive messages
+- [ ] Unread message indicator / notification badge
+- [ ] Optional: Telegram bridge — mirror chat to/from Telegram
 
 ## 💭 Backlog
 - [ ] Multi-user support (currently single user via config)
