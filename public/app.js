@@ -3,8 +3,8 @@
 // ============================================================
 const tabFiles = document.getElementById('tabFiles');
 const tabChat  = document.getElementById('tabChat');
-let unreadCount = 0;
-let chatActive = false;
+let unreadTotal = 0;   // total unread across all convos
+let chatActive  = false;
 
 document.querySelectorAll('.nav-tab').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -15,20 +15,22 @@ document.querySelectorAll('.nav-tab').forEach(btn => {
     tabChat.hidden  = tab !== 'chat';
     if (tab === 'chat') {
       chatActive = true;
-      unreadCount = 0;
-      updateUnreadBadge();
+      // Clear unread on active convo when switching to chat tab
+      if (activeConvoId) markConvoRead(activeConvoId);
+      updateNavBadge();
       scrollChatToBottom();
-      connectChat();
+      if (!ws || ws.readyState === WebSocket.CLOSED) connectChat();
     } else {
       chatActive = false;
     }
   });
 });
 
-function updateUnreadBadge() {
+function updateNavBadge() {
   const badge = document.getElementById('unreadBadge');
-  if (unreadCount > 0) {
-    badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+  unreadTotal = Object.values(unreadCounts).reduce((s, n) => s + n, 0);
+  if (unreadTotal > 0) {
+    badge.textContent = unreadTotal > 99 ? '99+' : unreadTotal;
     badge.hidden = false;
   } else {
     badge.hidden = true;
@@ -189,6 +191,13 @@ loadFiles();
 setInterval(loadFiles, 10000);
 
 // ============================================================
+// Chat — Multi-conversation state
+// ============================================================
+let conversations  = [];   // [{id, title, unread}, ...]
+let activeConvoId  = null;
+let unreadCounts   = {};   // { convoId: count }
+
+// ============================================================
 // Chat — WebSocket
 // ============================================================
 let ws = null;
@@ -196,7 +205,6 @@ let wsConnected = false;
 let wsReconnectTimer = null;
 
 // Fetch a short-lived WebSocket token from the server
-// (avoids reading httpOnly cookie from JS, which is blocked by design)
 async function getWsToken() {
   const res = await fetch('/api/chat/wstoken');
   if (!res.ok) return null;
@@ -208,15 +216,10 @@ async function connectChat() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
   const wsToken = await getWsToken();
-  if (!wsToken) {
-    console.warn('Could not get WebSocket auth token');
-    return;
-  }
+  if (!wsToken) { console.warn('Could not get WebSocket auth token'); return; }
 
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const url   = `${proto}://${location.host}/?token=${encodeURIComponent(wsToken)}`;
-
-  ws = new WebSocket(url);
+  ws = new WebSocket(`${proto}://${location.host}/?token=${encodeURIComponent(wsToken)}`);
 
   ws.addEventListener('open', () => {
     wsConnected = true;
@@ -229,11 +232,21 @@ async function connectChat() {
       if (data.type === 'history') {
         renderChatHistory(data.messages);
       } else if (data.type === 'message') {
-        appendChatMessage(data.message);
-        if (!chatActive) {
-          unreadCount++;
-          updateUnreadBadge();
+        const convoId = data.message.convoId || activeConvoId;
+        if (convoId === activeConvoId) {
+          appendChatMessage(data.message);
+        } else {
+          // Incoming message for a background convo
+          unreadCounts[convoId] = (unreadCounts[convoId] || 0) + 1;
+          renderConvoList();
         }
+        if (!chatActive || convoId !== activeConvoId) {
+          updateNavBadge();
+        }
+      } else if (data.type === 'conversations') {
+        // Server pushed a refreshed convo list
+        conversations = data.conversations || [];
+        renderConvoList();
       }
     } catch (e) {
       console.error('WS parse error', e);
@@ -242,17 +255,161 @@ async function connectChat() {
 
   ws.addEventListener('close', () => {
     wsConnected = false;
-    // Reconnect after 3 seconds if chat tab is active
-    wsReconnectTimer = setTimeout(() => {
-      if (chatActive) connectChat();
-    }, 3000);
+    wsReconnectTimer = setTimeout(() => { if (chatActive) connectChat(); }, 3000);
   });
 
-  ws.addEventListener('error', () => {
-    ws.close();
+  ws.addEventListener('error', () => { ws.close(); });
+}
+
+// ============================================================
+// Conversation list — load, render, switch
+// ============================================================
+async function loadConversations() {
+  try {
+    const res = await fetch('/api/conversations');
+    if (!res.ok) return;
+    const data = await res.json();
+    conversations = data.conversations || [];
+    if (conversations.length === 0) {
+      await createConversation('Chat');
+      return;
+    }
+    renderConvoList();
+    if (!activeConvoId) switchConversation(conversations[0].id);
+  } catch (e) {
+    console.error('Failed to load conversations', e);
+  }
+}
+
+function renderConvoList() {
+  const el = document.getElementById('convoList');
+  if (!conversations.length) {
+    el.innerHTML = '<div class="empty" style="padding:1rem;font-size:0.8rem;">No conversations yet</div>';
+    return;
+  }
+  el.innerHTML = conversations.map(c => {
+    const unread = unreadCounts[c.id] || 0;
+    const isActive = c.id === activeConvoId;
+    return '<div class="convo-item' + (isActive ? ' active' : '') + '" data-id="' + c.id + '">' +
+      '<span class="convo-name" title="' + escapeHtml(c.title) + '">' + escapeHtml(c.title) + '</span>' +
+      (unread > 0 ? '<span class="convo-badge">' + (unread > 99 ? '99+' : unread) + '</span>' : '') +
+      '<div class="convo-actions">' +
+      '<button class="btn-icon" onclick="promptRename('' + c.id + '')" title="Rename">✏️</button>' +
+      '<button class="btn-icon btn-danger" onclick="confirmDelete('' + c.id + '')" title="Delete">🗑</button>' +
+      '</div></div>';
+  }).join('');
+
+  el.querySelectorAll('.convo-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('.convo-actions')) return;
+      switchConversation(item.dataset.id);
+    });
   });
 }
 
+async function switchConversation(id) {
+  if (id === activeConvoId) return;
+  activeConvoId = id;
+  markConvoRead(id);
+  renderConvoList();
+  const convo = conversations.find(c => c.id === id);
+  document.getElementById('chatConvoTitle').textContent = convo ? convo.title : 'Chat';
+  const el = document.getElementById('chatMessages');
+  el.innerHTML = '<div class="chat-empty" style="margin:auto;color:#475569;font-size:.85rem;">Loading...</div>';
+  try {
+    const res = await fetch('/api/conversations/' + id + '/messages');
+    const data = await res.json();
+    renderChatHistory(data.messages || []);
+  } catch (e) {
+    el.innerHTML = '<div class="chat-empty" style="margin:auto;color:#fca5a5;">Failed to load messages</div>';
+  }
+}
+
+function markConvoRead(id) {
+  unreadCounts[id] = 0;
+  updateNavBadge();
+  const badge = document.querySelector('.convo-item[data-id="' + id + '"] .convo-badge');
+  if (badge) badge.remove();
+}
+
+async function createConversation(title) {
+  try {
+    const res = await fetch('/api/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: title || 'New Chat' })
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    conversations.unshift(data.conversation);
+    renderConvoList();
+    switchConversation(data.conversation.id);
+  } catch (e) {
+    toast('Failed to create conversation', 'error');
+  }
+}
+
+async function renameConversation(id, newTitle) {
+  try {
+    const res = await fetch('/api/conversations/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: newTitle })
+    });
+    if (!res.ok) return;
+    const convo = conversations.find(c => c.id === id);
+    if (convo) convo.title = newTitle;
+    renderConvoList();
+    if (id === activeConvoId) document.getElementById('chatConvoTitle').textContent = newTitle;
+    toast('Renamed ✓');
+  } catch (e) {
+    toast('Rename failed', 'error');
+  }
+}
+
+async function deleteConversation(id) {
+  try {
+    const res = await fetch('/api/conversations/' + id, { method: 'DELETE' });
+    if (!res.ok) return;
+    conversations = conversations.filter(c => c.id !== id);
+    delete unreadCounts[id];
+    if (activeConvoId === id) {
+      activeConvoId = null;
+      document.getElementById('chatMessages').innerHTML =
+        '<div class="chat-empty" style="margin:auto;color:#475569;font-size:.85rem;">Select a conversation</div>';
+      document.getElementById('chatConvoTitle').textContent = 'Chat';
+    }
+    renderConvoList();
+    if (conversations.length === 0) await createConversation('Chat');
+    toast('Deleted');
+  } catch (e) {
+    toast('Delete failed', 'error');
+  }
+}
+
+function promptRename(id) {
+  const convo = conversations.find(c => c.id === id);
+  const name = prompt('Rename conversation:', convo ? convo.title : '');
+  if (name && name.trim()) renameConversation(id, name.trim());
+}
+
+function confirmDelete(id) {
+  const convo = conversations.find(c => c.id === id);
+  if (confirm('Delete "' + (convo ? convo.title : 'this conversation') + '"? This cannot be undone.')) {
+    deleteConversation(id);
+  }
+}
+
+document.getElementById('newConvoBtn').addEventListener('click', () => createConversation('New Chat'));
+document.getElementById('renameConvoBtn').addEventListener('click', () => { if (activeConvoId) promptRename(activeConvoId); });
+document.getElementById('deleteConvoBtn').addEventListener('click', () => { if (activeConvoId) confirmDelete(activeConvoId); });
+
+const sidebar = document.getElementById('chatSidebar');
+document.getElementById('sidebarToggle').addEventListener('click', () => sidebar.classList.toggle('collapsed'));
+
+// ============================================================
+// Chat messages — render & scroll
+// ============================================================
 function scrollChatToBottom() {
   const el = document.getElementById('chatMessages');
   el.scrollTop = el.scrollHeight;
@@ -261,7 +418,7 @@ function scrollChatToBottom() {
 function renderChatHistory(messages) {
   const el = document.getElementById('chatMessages');
   if (!messages || messages.length === 0) {
-    el.innerHTML = '<div class="chat-empty">No messages yet. Say hello! 👋</div>';
+    el.innerHTML = '<div class="chat-empty" style="margin:auto;color:#475569;font-size:.85rem;">No messages yet. Say hello! 👋</div>';
     return;
   }
   el.innerHTML = messages.map(m => buildBubble(m)).join('');
@@ -270,26 +427,20 @@ function renderChatHistory(messages) {
 
 function appendChatMessage(msg) {
   const el = document.getElementById('chatMessages');
-  // Remove empty state
   const empty = el.querySelector('.chat-empty');
   if (empty) empty.remove();
-
   el.insertAdjacentHTML('beforeend', buildBubble(msg));
   scrollChatToBottom();
 }
 
 function buildBubble(msg) {
-  const isAgent  = msg.sender === 'ZeroClaw';
-  const cls      = isAgent ? 'from-agent' : 'from-user';
-  const time     = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const text     = escapeHtml(msg.text);
-  return `
-    <div class="chat-bubble ${cls}">
-      <div class="chat-sender">${escapeHtml(msg.sender)}</div>
-      <div>${text}</div>
-      <div class="chat-meta">${time}</div>
-    </div>
-  `;
+  const isAgent = msg.sender === 'ZeroClaw';
+  const cls     = isAgent ? 'from-agent' : 'from-user';
+  const time    = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return '<div class="chat-bubble ' + cls + '">' +
+    '<div class="chat-sender">' + escapeHtml(msg.sender) + '</div>' +
+    '<div>' + escapeHtml(msg.text) + '</div>' +
+    '<div class="chat-meta">' + time + '</div></div>';
 }
 
 function escapeHtml(str) {
@@ -301,34 +452,36 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+// ============================================================
 // Send message
+// ============================================================
 const chatInput = document.getElementById('chatInput');
 const chatSend  = document.getElementById('chatSend');
 
 function sendChatMessage() {
   const text = chatInput.value.trim();
   if (!text) return;
+  if (!activeConvoId) { toast('Select a conversation first', 'error'); return; }
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     toast('Not connected — reconnecting...', 'error');
     connectChat();
     return;
   }
-  ws.send(JSON.stringify({ type: 'message', text }));
+  ws.send(JSON.stringify({ type: 'message', text, convoId: activeConvoId }));
   chatInput.value = '';
   chatInput.style.height = 'auto';
 }
 
 chatSend.addEventListener('click', sendChatMessage);
-
 chatInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendChatMessage();
-  }
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
 });
-
-// Auto-resize textarea
 chatInput.addEventListener('input', () => {
   chatInput.style.height = 'auto';
   chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px';
 });
+
+// ============================================================
+// Bootstrap on load
+// ============================================================
+connectChat().then(() => loadConversations());

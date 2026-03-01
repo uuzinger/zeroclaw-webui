@@ -54,20 +54,44 @@
 
   <!-- Chat Tab -->
   <main id="tabChat" hidden>
-    <div class="chat-container">
-      <div class="chat-messages" id="chatMessages">
-        <div class="chat-empty">No messages yet. Say hello! 👋</div>
+    <div class="chat-layout">
+
+      <!-- Sidebar: conversation list -->
+      <aside class="chat-sidebar" id="chatSidebar">
+        <div class="sidebar-header">
+          <span class="sidebar-title">Conversations</span>
+          <button class="btn-icon" id="newConvoBtn" title="New conversation">＋</button>
+        </div>
+        <div class="convo-list" id="convoList">
+          <!-- populated by JS -->
+        </div>
+      </aside>
+
+      <!-- Main chat area -->
+      <div class="chat-main">
+        <div class="chat-topbar">
+          <button class="btn-icon sidebar-toggle" id="sidebarToggle" title="Toggle sidebar">☰</button>
+          <span class="chat-convo-title" id="chatConvoTitle">Chat</span>
+          <button class="btn-icon" id="renameConvoBtn" title="Rename conversation">✏️</button>
+          <button class="btn-icon btn-danger" id="deleteConvoBtn" title="Delete conversation">🗑</button>
+        </div>
+
+        <div class="chat-messages" id="chatMessages">
+          <div class="chat-empty">No messages yet. Say hello! 👋</div>
+        </div>
+
+        <div class="chat-input-row">
+          <textarea
+            id="chatInput"
+            class="chat-input"
+            placeholder="Message ZeroClaw..."
+            rows="1"
+            maxlength="2000"
+          ></textarea>
+          <button id="chatSend" class="btn btn-send">Send</button>
+        </div>
       </div>
-      <div class="chat-input-row">
-        <textarea
-          id="chatInput"
-          class="chat-input"
-          placeholder="Message ZeroClaw..."
-          rows="1"
-          maxlength="2000"
-        ></textarea>
-        <button id="chatSend" class="btn btn-send">Send</button>
-      </div>
+
     </div>
   </main>
 

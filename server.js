@@ -15,6 +15,7 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 const cfg = require('./config');
+const convos = require('./conversations');
 const PORT = cfg.PORT || 3000;
 
 const JWT_SECRET = cfg.JWT_SECRET;
@@ -25,31 +26,15 @@ const AGENT_API_KEY = cfg.AGENT_API_KEY || null;
 const UPLOADS_DIR = path.resolve(__dirname, 'uploads');
 const DOWNLOADS_DIR = path.resolve(__dirname, 'downloads');
 const LOGS_DIR = path.resolve(__dirname, 'logs');
-const CHAT_FILE = path.resolve(__dirname, 'chat_history.json');
+const CHAT_FILE = path.resolve(__dirname, 'chat_history.json'); // legacy
 
 // Ensure dirs exist
 [UPLOADS_DIR, DOWNLOADS_DIR, LOGS_DIR].forEach(d => {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 });
 
-// --- Chat history helpers ---
-function loadChatHistory() {
-  if (!fs.existsSync(CHAT_FILE)) return [];
-  try {
-    return JSON.parse(fs.readFileSync(CHAT_FILE, 'utf8'));
-  } catch {
-    return [];
-  }
-}
-
-function saveChatMessage(msg) {
-  const history = loadChatHistory();
-  history.push(msg);
-  // Keep last 500 messages
-  const trimmed = history.slice(-500);
-  fs.writeFileSync(CHAT_FILE, JSON.stringify(trimmed, null, 2));
-  return msg;
-}
+// Migrate old single chat_history.json into multi-conversation store
+convos.migrateOldHistory(CHAT_FILE);
 
 // --- Logging ---
 const accessLog = fs.createWriteStream(path.join(LOGS_DIR, 'access.log'), { flags: 'a' });
@@ -80,10 +65,15 @@ function requireAuth(req, res, next) {
   }
 }
 
+function requireAgentKey(req, res, next) {
+  if (!AGENT_API_KEY) return res.status(503).json({ error: 'Agent API not configured' });
+  const key = req.headers['x-agent-key'];
+  if (key !== AGENT_API_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  next();
+}
+
 // --- WebSocket auth helper ---
-// Accepts either a JWT (browser users) or the agent API key (chat-listener daemon)
 function verifyWsToken(token) {
-  // Accept agent key directly
   if (AGENT_API_KEY && token === AGENT_API_KEY) {
     return { username: 'ZeroClaw', agent: true };
   }
@@ -117,19 +107,26 @@ const upload = multer({
 // --- WebSocket server ---
 const clients = new Set();
 
+// Broadcast a message payload to all connected WS clients
+function broadcast(payload) {
+  const data = JSON.stringify(payload);
+  for (const client of clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(data);
+    }
+  }
+}
+
 wss.on('connection', (ws, req) => {
-  // Auth: try query string token first, then cookie
   const url = new URL(req.url, 'http://localhost');
   let token = url.searchParams.get('token');
 
-  // Fall back to cookie
   if (!token && req.headers.cookie) {
     const match = req.headers.cookie.match(/zc_token=([^;]+)/);
     if (match) token = decodeURIComponent(match[1]);
   }
 
   const user = verifyWsToken(token);
-
   if (!user) {
     ws.close(4001, 'Unauthorized');
     return;
@@ -138,32 +135,29 @@ wss.on('connection', (ws, req) => {
   ws.user = user;
   clients.add(ws);
 
-  // Send last 50 messages on connect
-  const history = loadChatHistory().slice(-50);
-  ws.send(JSON.stringify({ type: 'history', messages: history }));
-
   ws.on('message', (data) => {
     let parsed;
-    try {
-      parsed = JSON.parse(data);
-    } catch {
-      return;
-    }
+    try { parsed = JSON.parse(data); } catch { return; }
 
     if (parsed.type === 'message' && parsed.text && typeof parsed.text === 'string') {
-      const msg = saveChatMessage({
+      // Determine conversation
+      let convoId = parsed.convoId;
+      if (!convoId) {
+        const def = convos.getOrCreateDefault();
+        convoId = def.id;
+      }
+
+      const msg = convos.saveMessage(convoId, {
         id: Date.now(),
         sender: ws.user.username,
-        text: parsed.text.slice(0, 2000), // max 2000 chars
+        text: parsed.text.slice(0, 2000),
         timestamp: new Date().toISOString()
       });
 
-      // Broadcast to all connected clients
-      const payload = JSON.stringify({ type: 'message', message: msg });
-      for (const client of clients) {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(payload);
-        }
+      if (msg) {
+        broadcast({ type: 'message', convoId, message: msg });
+        // Also broadcast updated conversation list so sidebar refreshes
+        broadcast({ type: 'conversations', conversations: convos.listConversations() });
       }
     }
   });
@@ -172,54 +166,97 @@ wss.on('connection', (ws, req) => {
   ws.on('error', () => clients.delete(ws));
 });
 
-// --- REST API for ZeroClaw agent to send messages ---
-// POST /api/chat/send  { text: "..." }  — requires API key in header
-// GET  /api/chat/history               — returns last N messages
+// ============================================================
+// Conversation API
+// ============================================================
 
+// GET /api/conversations — list all
+app.get('/api/conversations', requireAuth, (req, res) => {
+  res.json({ conversations: convos.listConversations() });
+});
 
-function requireAgentKey(req, res, next) {
-  if (!AGENT_API_KEY) return res.status(503).json({ error: 'Agent API not configured' });
-  const key = req.headers['x-agent-key'];
-  if (key !== AGENT_API_KEY) return res.status(401).json({ error: 'Unauthorized' });
-  next();
-}
+// POST /api/conversations — create new
+app.post('/api/conversations', requireAuth, (req, res) => {
+  const { title } = req.body;
+  const convo = convos.createConversation(title || 'New Chat');
+  res.json({ conversation: convo });
+});
 
+// PATCH /api/conversations/:id — rename
+app.patch('/api/conversations/:id', requireAuth, (req, res) => {
+  const { title } = req.body;
+  if (!title) return res.status(400).json({ error: 'title required' });
+  const convo = convos.renameConversation(req.params.id, title);
+  if (!convo) return res.status(404).json({ error: 'Not found' });
+  res.json({ conversation: convo });
+});
+
+// DELETE /api/conversations/:id — delete
+app.delete('/api/conversations/:id', requireAuth, (req, res) => {
+  const ok = convos.deleteConversation(req.params.id);
+  if (!ok) return res.status(404).json({ error: 'Not found' });
+  res.json({ success: true });
+});
+
+// GET /api/conversations/:id/messages — load messages
+app.get('/api/conversations/:id/messages', (req, res, next) => {
+  const agentKey = req.headers['x-agent-key'];
+  if (AGENT_API_KEY && agentKey === AGENT_API_KEY) return next();
+  requireAuth(req, res, next);
+}, (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+  const messages = convos.loadMessages(req.params.id, limit);
+  res.json({ messages });
+});
+
+// ============================================================
+// Agent chat API (ZeroClaw → webui)
+// ============================================================
+
+// POST /api/chat/send  { text, convoId? }
 app.post('/api/chat/send', requireAgentKey, (req, res) => {
-  const { text } = req.body;
+  const { text, convoId } = req.body;
   if (!text || typeof text !== 'string') {
     return res.status(400).json({ error: 'text is required' });
   }
 
-  const msg = saveChatMessage({
+  // Find or create target conversation
+  let targetConvoId = convoId;
+  if (!targetConvoId) {
+    const def = convos.getOrCreateDefault();
+    targetConvoId = def.id;
+  }
+
+  const msg = convos.saveMessage(targetConvoId, {
     id: Date.now(),
     sender: 'ZeroClaw',
     text: text.slice(0, 2000),
     timestamp: new Date().toISOString()
   });
 
-  // Broadcast to all connected WebSocket clients
-  const payload = JSON.stringify({ type: 'message', message: msg });
-  for (const client of clients) {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(payload);
-    }
-  }
+  if (!msg) return res.status(404).json({ error: 'Conversation not found' });
+
+  broadcast({ type: 'message', convoId: targetConvoId, message: msg });
+  broadcast({ type: 'conversations', conversations: convos.listConversations() });
 
   res.json({ success: true, message: msg });
 });
 
+// GET /api/chat/history — legacy endpoint, returns default convo messages
 app.get('/api/chat/history', (req, res, next) => {
-  // Accept either user auth cookie OR agent API key
   const agentKey = req.headers['x-agent-key'];
   if (AGENT_API_KEY && agentKey === AGENT_API_KEY) return next();
   requireAuth(req, res, next);
 }, (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
-  const history = loadChatHistory().slice(-limit);
-  res.json({ messages: history });
+  const def = convos.getOrCreateDefault();
+  const messages = convos.loadMessages(def.id, limit);
+  res.json({ messages, convoId: def.id });
 });
 
-// --- File routes ---
+// ============================================================
+// Auth routes
+// ============================================================
 
 app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -250,6 +287,16 @@ app.get('/logout', (req, res) => {
 app.get('/', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
+// Issue short-lived WS token
+app.get('/api/chat/wstoken', requireAuth, (req, res) => {
+  const wsToken = jwt.sign({ username: req.user.username, ws: true }, JWT_SECRET, { expiresIn: '5m' });
+  res.json({ token: wsToken });
+});
+
+// ============================================================
+// File API
+// ============================================================
 
 app.get('/api/files', requireAuth, (req, res) => {
   const getFiles = (dir, type) => {
@@ -298,11 +345,9 @@ app.delete('/api/files/:type/:filename', requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
-// Issue a short-lived token for WebSocket auth (readable by JS, expires in 5 min)
-app.get('/api/chat/wstoken', requireAuth, (req, res) => {
-  const wsToken = jwt.sign({ username: req.user.username, ws: true }, JWT_SECRET, { expiresIn: '5m' });
-  res.json({ token: wsToken });
-});
+// ============================================================
+// Static + error handler
+// ============================================================
 
 app.use(express.static(path.join(__dirname, 'public')));
 
