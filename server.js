@@ -20,6 +20,7 @@ const PORT = cfg.PORT || 3000;
 const JWT_SECRET = cfg.JWT_SECRET;
 const USERNAME = cfg.ZC_USERNAME;
 const PASSWORD_HASH = cfg.ZC_PASSWORD_HASH;
+const AGENT_API_KEY = cfg.AGENT_API_KEY || null;
 
 const UPLOADS_DIR = path.resolve(__dirname, 'uploads');
 const DOWNLOADS_DIR = path.resolve(__dirname, 'downloads');
@@ -80,7 +81,12 @@ function requireAuth(req, res, next) {
 }
 
 // --- WebSocket auth helper ---
+// Accepts either a JWT (browser users) or the agent API key (chat-listener daemon)
 function verifyWsToken(token) {
+  // Accept agent key directly
+  if (AGENT_API_KEY && token === AGENT_API_KEY) {
+    return { username: 'ZeroClaw', agent: true };
+  }
   try {
     return jwt.verify(token, JWT_SECRET);
   } catch {
@@ -170,7 +176,6 @@ wss.on('connection', (ws, req) => {
 // POST /api/chat/send  { text: "..." }  — requires API key in header
 // GET  /api/chat/history               — returns last N messages
 
-const AGENT_API_KEY = cfg.AGENT_API_KEY || null;
 
 function requireAgentKey(req, res, next) {
   if (!AGENT_API_KEY) return res.status(503).json({ error: 'Agent API not configured' });

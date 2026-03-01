@@ -3,6 +3,6 @@ module.exports = {
   PORT: 3000,
   ZC_USERNAME: 'zinger',
   ZC_PASSWORD_HASH: '$2a$12$ofue9A.O50Pf9U9u3Zg4P.TuneLOlyO/yRkvEXGDuPaRAcv5WkWkC',
-  JWT_SECRET: 'zeroclaw-webui-jwt-secret-change-me',
-  AGENT_API_KEY: process.env.ZC_AGENT_API_KEY || null
+  JWT_SECRET: process.env.JWT_SECRET || 'zc-jwt-secret-change-in-production',
+  AGENT_API_KEY: process.env.ZC_AGENT_KEY || 'zc-agent-2026'
 };
