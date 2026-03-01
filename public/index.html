@@ -11,15 +11,15 @@
     <div class="nav-inner">
       <span class="nav-logo">🦀 ZeroClaw</span>
       <div class="nav-tabs">
-        <button class="nav-tab active" data-tab="files">📁 Files</button>
-        <button class="nav-tab" data-tab="chat">💬 Chat <span class="unread-badge" id="unreadBadge" hidden>0</span></button>
+        <button class="nav-tab" data-tab="files">📁 Files</button>
+        <button class="nav-tab active" data-tab="chat">💬 Chat <span class="unread-badge" id="unreadBadge" hidden>0</span></button>
       </div>
       <a href="/logout" class="nav-logout">Sign out</a>
     </div>
   </nav>
 
   <!-- Files Tab -->
-  <main id="tabFiles">
+  <main id="tabFiles" hidden>
     <section class="upload-zone" id="dropzone">
       <div class="upload-inner">
         <div class="upload-icon">📁</div>
@@ -53,7 +53,7 @@
   </main>
 
   <!-- Chat Tab -->
-  <main id="tabChat" hidden>
+  <main id="tabChat">
     <div class="chat-layout">
 
       <!-- Sidebar: conversation list -->
