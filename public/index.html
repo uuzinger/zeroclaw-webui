@@ -3,18 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ZeroClaw — Files</title>
+  <title>ZeroClaw</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <nav>
     <div class="nav-inner">
       <span class="nav-logo">🦀 ZeroClaw</span>
+      <div class="nav-tabs">
+        <button class="nav-tab active" data-tab="files">📁 Files</button>
+        <button class="nav-tab" data-tab="chat">💬 Chat <span class="unread-badge" id="unreadBadge" hidden>0</span></button>
+      </div>
       <a href="/logout" class="nav-logout">Sign out</a>
     </div>
   </nav>
 
-  <main>
+  <!-- Files Tab -->
+  <main id="tabFiles">
     <section class="upload-zone" id="dropzone">
       <div class="upload-inner">
         <div class="upload-icon">📁</div>
@@ -44,6 +49,25 @@
           <div class="empty">No files yet</div>
         </div>
       </section>
+    </div>
+  </main>
+
+  <!-- Chat Tab -->
+  <main id="tabChat" hidden>
+    <div class="chat-container">
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-empty">No messages yet. Say hello! 👋</div>
+      </div>
+      <div class="chat-input-row">
+        <textarea
+          id="chatInput"
+          class="chat-input"
+          placeholder="Message ZeroClaw..."
+          rows="1"
+          maxlength="2000"
+        ></textarea>
+        <button id="chatSend" class="btn btn-send">Send</button>
+      </div>
     </div>
   </main>
 

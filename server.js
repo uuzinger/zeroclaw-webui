@@ -7,8 +7,13 @@ const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
+const WebSocket = require('ws');
 
 const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
 const cfg = require('./config');
 const PORT = cfg.PORT || 3000;
 
@@ -17,13 +22,33 @@ const USERNAME = cfg.ZC_USERNAME;
 const PASSWORD_HASH = cfg.ZC_PASSWORD_HASH;
 
 const UPLOADS_DIR = path.resolve(__dirname, 'uploads');
-const DOWNLOADS_DIR = path.resolve(__dirname, '../../downloads');
+const DOWNLOADS_DIR = path.resolve(__dirname, 'downloads');
 const LOGS_DIR = path.resolve(__dirname, 'logs');
+const CHAT_FILE = path.resolve(__dirname, 'chat_history.json');
 
 // Ensure dirs exist
 [UPLOADS_DIR, DOWNLOADS_DIR, LOGS_DIR].forEach(d => {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 });
+
+// --- Chat history helpers ---
+function loadChatHistory() {
+  if (!fs.existsSync(CHAT_FILE)) return [];
+  try {
+    return JSON.parse(fs.readFileSync(CHAT_FILE, 'utf8'));
+  } catch {
+    return [];
+  }
+}
+
+function saveChatMessage(msg) {
+  const history = loadChatHistory();
+  history.push(msg);
+  // Keep last 500 messages
+  const trimmed = history.slice(-500);
+  fs.writeFileSync(CHAT_FILE, JSON.stringify(trimmed, null, 2));
+  return msg;
+}
 
 // --- Logging ---
 const accessLog = fs.createWriteStream(path.join(LOGS_DIR, 'access.log'), { flags: 'a' });
@@ -54,6 +79,15 @@ function requireAuth(req, res, next) {
   }
 }
 
+// --- WebSocket auth helper ---
+function verifyWsToken(token) {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch {
+    return null;
+  }
+}
+
 // --- Multer setup ---
 const storage = multer.diskStorage({
   destination: UPLOADS_DIR,
@@ -74,7 +108,108 @@ const upload = multer({
   }
 });
 
-// --- Routes ---
+// --- WebSocket server ---
+const clients = new Set();
+
+wss.on('connection', (ws, req) => {
+  // Auth: try query string token first, then cookie
+  const url = new URL(req.url, 'http://localhost');
+  let token = url.searchParams.get('token');
+
+  // Fall back to cookie
+  if (!token && req.headers.cookie) {
+    const match = req.headers.cookie.match(/zc_token=([^;]+)/);
+    if (match) token = decodeURIComponent(match[1]);
+  }
+
+  const user = verifyWsToken(token);
+
+  if (!user) {
+    ws.close(4001, 'Unauthorized');
+    return;
+  }
+
+  ws.user = user;
+  clients.add(ws);
+
+  // Send last 50 messages on connect
+  const history = loadChatHistory().slice(-50);
+  ws.send(JSON.stringify({ type: 'history', messages: history }));
+
+  ws.on('message', (data) => {
+    let parsed;
+    try {
+      parsed = JSON.parse(data);
+    } catch {
+      return;
+    }
+
+    if (parsed.type === 'message' && parsed.text && typeof parsed.text === 'string') {
+      const msg = saveChatMessage({
+        id: Date.now(),
+        sender: ws.user.username,
+        text: parsed.text.slice(0, 2000), // max 2000 chars
+        timestamp: new Date().toISOString()
+      });
+
+      // Broadcast to all connected clients
+      const payload = JSON.stringify({ type: 'message', message: msg });
+      for (const client of clients) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(payload);
+        }
+      }
+    }
+  });
+
+  ws.on('close', () => clients.delete(ws));
+  ws.on('error', () => clients.delete(ws));
+});
+
+// --- REST API for ZeroClaw agent to send messages ---
+// POST /api/chat/send  { text: "..." }  — requires API key in header
+// GET  /api/chat/history               — returns last N messages
+
+const AGENT_API_KEY = cfg.AGENT_API_KEY || null;
+
+function requireAgentKey(req, res, next) {
+  if (!AGENT_API_KEY) return res.status(503).json({ error: 'Agent API not configured' });
+  const key = req.headers['x-agent-key'];
+  if (key !== AGENT_API_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  next();
+}
+
+app.post('/api/chat/send', requireAgentKey, (req, res) => {
+  const { text } = req.body;
+  if (!text || typeof text !== 'string') {
+    return res.status(400).json({ error: 'text is required' });
+  }
+
+  const msg = saveChatMessage({
+    id: Date.now(),
+    sender: 'ZeroClaw',
+    text: text.slice(0, 2000),
+    timestamp: new Date().toISOString()
+  });
+
+  // Broadcast to all connected WebSocket clients
+  const payload = JSON.stringify({ type: 'message', message: msg });
+  for (const client of clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(payload);
+    }
+  }
+
+  res.json({ success: true, message: msg });
+});
+
+app.get('/api/chat/history', requireAuth, (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const history = loadChatHistory().slice(-limit);
+  res.json({ messages: history });
+});
+
+// --- File routes ---
 
 app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -153,6 +288,12 @@ app.delete('/api/files/:type/:filename', requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
+// Issue a short-lived token for WebSocket auth (readable by JS, expires in 5 min)
+app.get('/api/chat/wstoken', requireAuth, (req, res) => {
+  const wsToken = jwt.sign({ username: req.user.username, ws: true }, JWT_SECRET, { expiresIn: '5m' });
+  res.json({ token: wsToken });
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use((err, req, res, next) => {
@@ -160,6 +301,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message });
 });
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`ZeroClaw WebUI running on http://localhost:${PORT}`);
 });
