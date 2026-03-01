@@ -294,8 +294,8 @@ function renderConvoList() {
       '<span class="convo-name" title="' + escapeHtml(c.title) + '">' + escapeHtml(c.title) + '</span>' +
       (unread > 0 ? '<span class="convo-badge">' + (unread > 99 ? '99+' : unread) + '</span>' : '') +
       '<div class="convo-actions">' +
-      '<button class="btn-icon" onclick="promptRename('' + c.id + '')" title="Rename">✏️</button>' +
-      '<button class="btn-icon btn-danger" onclick="confirmDelete('' + c.id + '')" title="Delete">🗑</button>' +
+      '<button class="btn-icon" onclick="promptRename(\'' + c.id + '\')" title="Rename">✏️</button>' +
+      '<button class="btn-icon btn-danger" onclick="confirmDelete(\'' + c.id + '\')" title="Delete">🗑</button>' +
       '</div></div>';
   }).join('');
 

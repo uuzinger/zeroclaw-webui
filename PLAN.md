@@ -16,36 +16,31 @@
 - ✅ `server.js` fully rewritten with conversation support
 - ✅ `index.html` updated with sidebar HTML structure
 - ✅ `agent/listener.js` — direct gateway integration (port 42617, no CLI spawning)
+- ✅ **WebUI chat tested and working end-to-end** (2026-03-01)
+- ✅ `public/app.js` — multi-conversation sidebar, WebSocket routing, rename/delete/new convo
+- ✅ `public/style.css` — two-column sidebar layout, convo list styles, mobile responsive
+- ✅ Fixed onclick quote escaping bug in `renderConvoList` (2026-03-01)
 
 ---
 
 ## What's Next
 
-### 1. Frontend — `public/app.js` (multi-conversation)
-Rewrite app.js to support:
-- Sidebar with conversation list (load on login)
-- Active conversation switching (click to load messages)
-- New conversation button
-- Rename conversation (inline prompt)
-- Delete conversation (confirm dialog)
-- Per-conversation WebSocket message routing (send `convoId` with messages)
-- Unread badge per conversation
-- Messages render in active conversation panel only
+### 🔄 1. Test the full UI end-to-end
+- Log in at http://zeroclaw.zinger.org:3000
+- Verify sidebar loads conversations
+- Test new conversation, rename, delete
+- Test sending a message and receiving a reply
+- Check mobile layout
 
-### 2. Frontend — `public/style.css` (sidebar layout)
-Add styles for:
-- Two-column layout: sidebar (260px) + main chat area
-- Conversation list items with hover/active states
-- Rename/delete action buttons per conversation
-- Mobile responsive (sidebar collapses)
+### 2. Agent Listener — wire to gateway
+- `agent/listener.js` is ready; needs `require_pairing = false` in config.toml ← **zinger to do**
+- Once unblocked: start listener and test full round-trip (webui → gateway → ZeroClaw → webui)
+- Consider adding to systemd as `zeroclaw-webui-listener.service`
 
-### 3. Agent Listener — `agent/listener.js` ✅ DONE
-- Connects to webui WebSocket using agent key as token
-- Listens for `{type:'message', convoId, message}` broadcasts
-- Forwards user messages to ZeroClaw gateway on port 42617
-- Posts replies back via `/api/chat/send` with `x-agent-key` auth
-- Deduplicates by message ID, auto-reconnects
-- **Run:** `ZC_AGENT_KEY=<key> node agent/listener.js`
+### 3. Markdown rendering in chat
+- Messages currently render as plain text (HTML-escaped)
+- Add a lightweight markdown renderer (e.g. `marked.js` via CDN) for ZeroClaw replies
+- Only render ZeroClaw messages as markdown; user messages stay plain text
 
 ---
 
@@ -61,5 +56,5 @@ Add styles for:
 - Mobile-friendly UI improvements
 - File preview in browser (images, text, PDFs)
 - ZeroClaw pushes proactive messages (alerts, cron results) to webui chat
-- Markdown rendering in chat messages
 - `pm2` process management for server + listener
+- SQLite for chat history (replace JSON)
