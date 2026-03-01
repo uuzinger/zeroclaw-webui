@@ -7,3 +7,4 @@ conversations/
 *.env
 .env
 *.md
+!README.md
