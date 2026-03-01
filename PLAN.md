@@ -27,6 +27,8 @@ Last updated: 2026-03-01
 - [x] **Chat feature** — Chat UI panel with tab switching, unread badge, auto-scroll
 - [x] **Chat feature** — Message history (last 500 msgs, JSON file)
 - [x] **Chat feature** — Fix: use wstoken endpoint instead of reading httpOnly cookie from JS
+- [x] **Chat feature** — Fix: /api/chat/history accepts agent API key OR user cookie
+- [x] **README.md** — full setup instructions, API reference, nginx config
 - [x] Git push workflow verified (uuzinger/zeroclaw-webui)
 
 ---
@@ -39,11 +41,10 @@ Last updated: 2026-03-01
 
 ## 📋 Next Up (prioritized)
 
-- [ ] **README.md** — setup instructions, env vars, how to run
+- [ ] **ZeroClaw agent integration** — wire up a helper skill/function so I can send chat messages from cron jobs or Telegram relay
+- [ ] **Test the full flow end-to-end** — deploy somewhere accessible, verify chat works
 - [ ] **config.js setup guide** — document required fields (ZC_USERNAME, ZC_PASSWORD_HASH, ZC_AGENT_KEY, etc.)
 - [ ] **HTTPS / reverse proxy** — nginx or caddy config for production deployment
-- [ ] **ZeroClaw agent integration** — wire up POST /api/chat/send so I can push messages from cron jobs or Telegram
-- [ ] **Test the full flow end-to-end** — deploy somewhere accessible, verify chat works
 
 ---
 

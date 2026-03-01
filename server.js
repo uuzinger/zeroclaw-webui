@@ -203,7 +203,12 @@ app.post('/api/chat/send', requireAgentKey, (req, res) => {
   res.json({ success: true, message: msg });
 });
 
-app.get('/api/chat/history', requireAuth, (req, res) => {
+app.get('/api/chat/history', (req, res, next) => {
+  // Accept either user auth cookie OR agent API key
+  const agentKey = req.headers['x-agent-key'];
+  if (AGENT_API_KEY && agentKey === AGENT_API_KEY) return next();
+  requireAuth(req, res, next);
+}, (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const history = loadChatHistory().slice(-limit);
   res.json({ messages: history });
