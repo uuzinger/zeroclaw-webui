@@ -1,7 +1,7 @@
 # PLAN.md — zeroclaw-webui
 
-## Goal
-A lightweight, self-hosted web UI for secure file exchange and real-time chat between ZeroClaw and zinger.
+## Project Goal
+A personal web UI for file exchange and real-time chat between ZeroClaw and zinger.
 
 ## Status: Active
 Last updated: 2026-03-01
@@ -9,52 +9,64 @@ Last updated: 2026-03-01
 ---
 
 ## ✅ Completed
-- [x] Express server with JWT auth (login/logout, remember me cookie)
-- [x] Rate limiting on login endpoint (5 attempts / 15 min)
-- [x] File upload via multer (50MB limit, blocked dangerous extensions: .exe .sh .bat .cmd .ps1 .msi)
-- [x] Upload up to 10 files at once
-- [x] File download (uploads dir + downloads dir)
-- [x] File delete (by type + filename)
-- [x] Access logging via morgan → logs/access.log
-- [x] Login page (login.html)
-- [x] Main UI (index.html + app.js + style.css)
+
+- [x] Express server with JWT auth (login/logout, remember me)
+- [x] Rate limiting on login (5 attempts / 15 min)
+- [x] File upload (multer, 50MB limit, blocked dangerous extensions)
+- [x] File download from uploads/ and downloads/ dirs
+- [x] File delete
+- [x] Access logging (morgan → logs/access.log)
+- [x] Login page + main UI (index.html, login.html, style.css, app.js)
 - [x] Config file with bcrypt password hash
-- [x] Git push working to uuzinger/zeroclaw-webui
+- [x] Fix DOWNLOADS_DIR path (was incorrectly pointing 2 levels up)
+- [x] .gitignore (node_modules, logs, uploads, downloads, chat_history.json)
+- [x] Frontend app.js audit — all endpoints verified, chat wired correctly
+- [x] **Chat feature** — WebSocket server with JWT auth
+- [x] **Chat feature** — REST API for ZeroClaw agent (POST /api/chat/send, GET /api/chat/history)
+- [x] **Chat feature** — Short-lived WS token endpoint (/api/chat/wstoken)
+- [x] **Chat feature** — Chat UI panel with tab switching, unread badge, auto-scroll
+- [x] **Chat feature** — Message history (last 500 msgs, JSON file)
+- [x] **Chat feature** — Fix: use wstoken endpoint instead of reading httpOnly cookie from JS
+- [x] Git push workflow verified (uuzinger/zeroclaw-webui)
+
+---
 
 ## 🔄 In Progress
-- [ ] Nothing currently in progress
+
+*(nothing currently)*
+
+---
 
 ## 📋 Next Up (prioritized)
-- [ ] Review and audit the frontend (app.js) — confirm all API endpoints are wired up correctly
-- [ ] Add HTTPS / TLS support (or document how to run behind nginx/caddy reverse proxy)
-- [ ] Add a proper README.md with setup instructions
-- [ ] Drag-and-drop upload UX improvement
-- [ ] Show upload progress bar
-- [ ] File rename support
 
-## 💬 Chat Feature Scope
-Real-time chat between zinger and ZeroClaw, integrated into the existing web UI.
+- [ ] **README.md** — setup instructions, env vars, how to run
+- [ ] **config.js setup guide** — document required fields (ZC_USERNAME, ZC_PASSWORD_HASH, ZC_AGENT_KEY, etc.)
+- [ ] **HTTPS / reverse proxy** — nginx or caddy config for production deployment
+- [ ] **ZeroClaw agent integration** — wire up POST /api/chat/send so I can push messages from cron jobs or Telegram
+- [ ] **Test the full flow end-to-end** — deploy somewhere accessible, verify chat works
 
-- [ ] WebSocket server (ws or socket.io) — real-time bidirectional messaging
-- [ ] Chat UI panel alongside file manager (split layout or tabbed)
-- [ ] Message history — persist to a local JSON or SQLite file
-- [ ] Timestamps and sender labels (zinger vs ZeroClaw)
-- [ ] ZeroClaw-side API — endpoint or WebSocket hook so the agent can send/receive messages
-- [ ] Unread message indicator / notification badge
-- [ ] Optional: Telegram bridge — mirror chat to/from Telegram
+---
 
 ## 💭 Backlog
-- [ ] Multi-user support (currently single user via config)
-- [ ] File expiry / auto-cleanup of old uploads
-- [ ] Download count tracking
-- [ ] Notifications (Telegram/Pushover) when a file is uploaded
-- [ ] Dark mode UI
-- [ ] Mobile-responsive polish
 
-## 🚫 Decisions & Non-Goals
-- Single-user only for now — multi-user adds complexity not currently needed
-- No database — filesystem is the store, keeping it simple
-- Blocked extensions list is intentionally conservative
+- [ ] Telegram bridge — relay chat messages between webui and Telegram
+- [ ] File previews (images inline, text preview)
+- [ ] Pagination for large file lists
+- [ ] Dark mode toggle
+- [ ] Mobile-responsive polish
+- [ ] SQLite for chat history (replace JSON file for better performance)
+- [ ] Read receipts / message status
+
+---
+
+## 🚫 Decisions / Non-Goals
+
+- No multi-user support — this is a personal 1:1 tool (zinger ↔ ZeroClaw)
+- No cloud storage — local filesystem only
+- No public registration — single hardcoded user in config
+
+---
 
 ## 🐛 Known Issues
-- None currently known
+
+*(none currently)*
