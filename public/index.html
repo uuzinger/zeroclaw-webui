@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZeroClaw — Files</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav>
+    <div class="nav-inner">
+      <span class="nav-logo">🦀 ZeroClaw</span>
+      <a href="/logout" class="nav-logout">Sign out</a>
+    </div>
+  </nav>
+
+  <main>
+    <section class="upload-zone" id="dropzone">
+      <div class="upload-inner">
+        <div class="upload-icon">📁</div>
+        <p class="upload-title">Drop files here or <label for="fileInput" class="browse-link">browse</label></p>
+        <p class="upload-sub">Max 50MB per file</p>
+        <input type="file" id="fileInput" multiple hidden>
+      </div>
+      <div class="upload-progress" id="uploadProgress" hidden>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <p id="progressText">Uploading...</p>
+      </div>
+    </section>
+
+    <div class="panels">
+      <section class="panel">
+        <h2>📤 Downloads from ZeroClaw</h2>
+        <p class="panel-sub">Files ZeroClaw has generated for you</p>
+        <div class="file-list" id="downloadsList">
+          <div class="empty">No files yet</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>📥 Your Uploads</h2>
+        <p class="panel-sub">Files you've sent to ZeroClaw</p>
+        <div class="file-list" id="uploadsList">
+          <div class="empty">No files yet</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
