@@ -1,0 +1,22 @@
+[Unit]
+Description=ZeroClaw WebUI Chat Listener
+Documentation=https://github.com/uuzinger/zeroclaw-webui
+After=network.target zeroclaw-webui.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=zinger
+WorkingDirectory=/home/zinger/.zeroclaw/workspace/sandbox/zeroclaw-webui
+ExecStart=/usr/bin/node agent/listener.js
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=zeroclaw-webui-listener
+
+# Give it time to connect to the WebSocket
+TimeoutStartSec=10
+
+[Install]
+WantedBy=multi-user.target

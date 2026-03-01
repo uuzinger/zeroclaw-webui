@@ -9,7 +9,10 @@ A personal web UI for file exchange and real-time chat between ZeroClaw and zing
 - 📥 File download from `uploads/` and `downloads/` directories
 - 🗑️ File delete
 - 💬 Real-time chat via WebSocket (ZeroClaw ↔ zinger)
-- 📜 Chat history (last 500 messages, persisted to JSON)
+- 🗂️ Multi-conversation support with sidebar (create, rename, delete conversations)
+- 📜 Chat history (persisted, with migration from legacy single-conversation format)
+- 🖊️ Markdown rendering in chat (ZeroClaw replies rendered via `marked.js`)
+- 🤖 Agent listener — bridges the webui to the ZeroClaw gateway in real time
 - 📋 Access logging
 
 ---
@@ -40,8 +43,8 @@ module.exports = {
   PORT: 3000,                         // Port to listen on
   ZC_USERNAME: 'zinger',              // Login username
   ZC_PASSWORD_HASH: '<bcrypt hash>', // bcrypt hash of your password
-  JWT_SECRET: '<random secret>',      // Long random string for JWT signing
-  AGENT_API_KEY: '<api key>'          // Secret key for ZeroClaw agent API calls
+  JWT_SECRET: '<long random string>', // Long random string for JWT signing
+  AGENT_API_KEY: '<random key>'       // Secret key for ZeroClaw agent API calls
 };
 ```
 
@@ -73,22 +76,58 @@ The server starts on `http://localhost:3000` (or whatever `PORT` is set to).
 
 ---
 
+## Agent Listener
+
+`agent/listener.js` is a long-running process that connects to the ZeroClaw gateway and bridges messages to/from the webui chat. It must be running for the chat to work end-to-end.
+
+### Run manually (dev/testing)
+
+```bash
+node agent/listener.js
+```
+
+### Run as a systemd service (production)
+
+A service file is included at `zeroclaw-webui-listener.service`. Install it:
+
+```bash
+sudo cp zeroclaw-webui-listener.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable zeroclaw-webui-listener
+sudo systemctl start zeroclaw-webui-listener
+```
+
+Check status:
+
+```bash
+sudo systemctl status zeroclaw-webui-listener
+journalctl -u zeroclaw-webui-listener -f
+```
+
+> The service is configured to restart automatically on failure (`Restart=on-failure`).
+> It expects the server to be running at the path in `WorkingDirectory` — adjust if your install path differs.
+
+---
+
 ## Directory Structure
 
 ```
 zeroclaw-webui/
-├── server.js          # Express + WebSocket server
-├── config.js          # Configuration (not committed with secrets)
+├── server.js                          # Express + WebSocket server
+├── config.js                          # Configuration (not committed with secrets)
+├── agent/
+│   └── listener.js                    # ZeroClaw gateway bridge (run as systemd service)
+├── zeroclaw-webui-listener.service    # systemd unit file for the listener
 ├── public/
-│   ├── index.html     # Main UI (files + chat tabs)
-│   ├── login.html     # Login page
-│   ├── app.js         # Frontend JS
-│   └── style.css      # Styles
-├── uploads/           # Files uploaded by zinger (served to ZeroClaw)
-├── downloads/         # Files placed here by ZeroClaw (served to zinger)
+│   ├── index.html                     # Main UI (files + chat tabs)
+│   ├── login.html                     # Login page
+│   ├── app.js                         # Frontend JS (multi-conversation, markdown rendering)
+│   └── style.css                      # Styles (two-column sidebar layout)
+├── uploads/                           # Files uploaded by zinger (served to ZeroClaw)
+├── downloads/                         # Files placed here by ZeroClaw (served to zinger)
 ├── logs/
-│   └── access.log     # HTTP access log
-└── chat_history.json  # Persisted chat messages (auto-created)
+│   └── access.log                     # HTTP access log
+└── chat_history.json                  # Legacy single-conversation history (auto-migrated)
 ```
 
 ---
@@ -111,6 +150,16 @@ zeroclaw-webui/
 | `GET` | `/api/download/:filename` | Download from downloads/ |
 | `GET` | `/api/uploads/:filename` | Download from uploads/ |
 | `DELETE` | `/api/files/:type/:filename` | Delete a file (`type`: `uploads` or `downloads`) |
+
+### Conversations
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/conversations` | List all conversations |
+| `POST` | `/api/conversations` | Create a new conversation |
+| `PATCH` | `/api/conversations/:id` | Rename a conversation |
+| `DELETE` | `/api/conversations/:id` | Delete a conversation |
+| `GET` | `/api/conversations/:id/messages` | Get messages for a conversation |
 
 ### Chat (WebSocket)
 
