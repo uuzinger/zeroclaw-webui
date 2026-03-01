@@ -437,9 +437,13 @@ function buildBubble(msg) {
   const isAgent = msg.sender === 'ZeroClaw';
   const cls     = isAgent ? 'from-agent' : 'from-user';
   const time    = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // Agent messages render as markdown; user messages are escaped plain text
+  const content = isAgent
+    ? marked.parse(msg.text || '')
+    : '<p>' + escapeHtml(msg.text) + '</p>';
   return '<div class="chat-bubble ' + cls + '">' +
     '<div class="chat-sender">' + escapeHtml(msg.sender) + '</div>' +
-    '<div>' + escapeHtml(msg.text) + '</div>' +
+    '<div class="chat-content">' + content + '</div>' +
     '<div class="chat-meta">' + time + '</div></div>';
 }
 
