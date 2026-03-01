@@ -15,6 +15,7 @@
 - ✅ Agent REST API (`/api/chat/send`, `/api/chat/history`) with `X-Agent-Key` auth
 - ✅ `server.js` fully rewritten with conversation support
 - ✅ `index.html` updated with sidebar HTML structure
+- ✅ `agent/listener.js` — direct gateway integration (port 42617, no CLI spawning)
 
 ---
 
@@ -38,19 +39,19 @@ Add styles for:
 - Rename/delete action buttons per conversation
 - Mobile responsive (sidebar collapses)
 
-### 3. Agent Listener — `agent/listener.js`
-Persistent Node.js process that:
-- Polls `/api/chat/history` (active conversation) every 2-3 seconds
-- Tracks `lastSeenId` to detect new messages from zinger
-- POSTs new messages to ZeroClaw HTTP gateway (`http://localhost:42617`)
-- Pushes ZeroClaw's response back via `POST /api/chat/send`
-- Restart strategy: run via `pm2` or shell loop
+### 3. Agent Listener — `agent/listener.js` ✅ DONE
+- Connects to webui WebSocket using agent key as token
+- Listens for `{type:'message', convoId, message}` broadcasts
+- Forwards user messages to ZeroClaw gateway on port 42617
+- Posts replies back via `/api/chat/send` with `x-agent-key` auth
+- Deduplicates by message ID, auto-reconnects
+- **Run:** `ZC_AGENT_KEY=<key> node agent/listener.js`
 
 ---
 
 ## Prerequisites (Manual — zinger to do)
 
-- [ ] Set `require_pairing = false` in `config.toml` to allow unauthenticated local connections to gateway on port 42617
+- [x] Set `require_pairing = false` in `config.toml` — DONE
 
 ---
 
