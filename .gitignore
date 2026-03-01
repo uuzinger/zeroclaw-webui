@@ -6,3 +6,4 @@ chat_history.json
 conversations/
 *.env
 .env
+*.md
