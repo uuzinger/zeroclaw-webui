@@ -195,8 +195,8 @@ let ws = null;
 let wsConnected = false;
 let wsReconnectTimer = null;
 
-// Extract JWT token from cookie (httpOnly is false for ws auth)
-// We'll fetch a short-lived ws token from a dedicated endpoint instead
+// Fetch a short-lived WebSocket token from the server
+// (avoids reading httpOnly cookie from JS, which is blocked by design)
 async function getWsToken() {
   const res = await fetch('/api/chat/wstoken');
   if (!res.ok) return null;
@@ -204,22 +204,17 @@ async function getWsToken() {
   return data.token;
 }
 
-function connectChat() {
+async function connectChat() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
-  // Get cookie value for ws auth
-  const cookieToken = document.cookie
-    .split('; ')
-    .find(r => r.startsWith('zc_token='))
-    ?.split('=')[1];
-
-  if (!cookieToken) {
-    console.warn('No auth token found for WebSocket');
+  const wsToken = await getWsToken();
+  if (!wsToken) {
+    console.warn('Could not get WebSocket auth token');
     return;
   }
 
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const url   = `${proto}://${location.host}/?token=${encodeURIComponent(cookieToken)}`;
+  const url   = `${proto}://${location.host}/?token=${encodeURIComponent(wsToken)}`;
 
   ws = new WebSocket(url);
 
@@ -247,7 +242,7 @@ function connectChat() {
 
   ws.addEventListener('close', () => {
     wsConnected = false;
-    // Reconnect after 3 seconds
+    // Reconnect after 3 seconds if chat tab is active
     wsReconnectTimer = setTimeout(() => {
       if (chatActive) connectChat();
     }, 3000);
